@@ -1,0 +1,7 @@
+cd ~/catkin_ws
+source devel/setup.bash
+roslaunch libuvc_camera uvccam.launch &
+rosrun simple_opencv detectStopAndBlob.py &
+roslaunch ros_pololu_servo pololu_example.launch &
+rosrun ros_pololu_servo pololu_trajectory_action_node.py &
+rosrun ros_pololu_servo pololu_action_client_example.py &
