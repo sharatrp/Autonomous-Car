@@ -44,11 +44,11 @@ VALUES_UPDATED = False;
 
 
 SERVO_MAX_ROTATION = 25.0;
-SERVO_ROTATION_RANGE = 10.0; 
+SERVO_ROTATION_RANGE = 15.0; 
 SERVO_WHEEL_ALIGNMENT_OFFSET = -5.0;	# Servo is always aligned to left. So to bring it to center, move it to -5
 
-MIN_SPEED = 0.43;
-MAX_SPEED = 0.38;
+LOW_SPEED = 0.41;
+HIGH_SPEED = 0.38;
 
 Max_right_limit = 230
 Max_left_limit = 50
@@ -105,27 +105,19 @@ class IR_Subscriber:
 	self._IRTime = 0.0
 	self._LastfrontDistance = 301.0
 	self._LastsideDistance = 150.0
-	self._lastFrontSlope = 0.0;
-	self._lastSideSlope = 0.0;
 
     def computeDistance(self, pulse, isFrontIR):
 	index = 0 if isFrontIR else 1; # 0 for front, 1 for side
 
 	if isFrontIR and pulse < 95:	
-		return (self._LastfrontDistance if self._lastFrontSlope > 8.0 else INFINITY_DIST);	# For pulse =98, distance computed is 277.7cm		
+		return (self._LastfrontDistance if self._LastfrontDistance < 250.0 else INFINITY_DIST);	# For pulse =98, distance computed is 277.7cm		
 	
 	if not isFrontIR and pulse < 90:	
-		return (self._LastsideDistance if self._lastSideSlope > 8.0 else INFINITY_DIST);	# For pulse =98, distance computed is 277.7cm		
+		return (self._LastsideDistance if self._LastsideDistance < 150.0 else INFINITY_DIST);	# For pulse =98, distance computed is 277.7cm		
 
 	pulse = 90 if pulse < 90 else pulse
 	pulse = 180 if pulse > 180 else pulse
 	slope = abs((pulse - self.ir_filteredvalues[index][self.ir_sample_count-4])/4);
-
-	if isFrontIR:
-		self._lastFrontSlope = slope;
-	else:
-		self._lastSideSlope = slope;
-
 	#slope2 = abs((pulse - self.ir_filteredvalues[index][self.ir_sample_count-3])/3);
 	if slope > 8.0 or pulse > 160:
 		#In bad region
@@ -234,8 +226,6 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	self._lastAngle = SERVO_WHEEL_ALIGNMENT_OFFSET*-1.0
 	self._centerTime = 0.0
 	self._lastServoMovement = ""
-	self._speedOffset = 0.0;
-	self._probablyTurning = False;
 
    def move(self):
 	client = actionlib.SimpleActionClient('pololu_trajectory_action_server', pololu_trajectoryAction)
@@ -278,62 +268,78 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 				setOriginalThresholdValues();
 			
 		probablyTurning = False;
-		if frontDistance >= INFINITY_DIST:		# No wall in front
-			if self._turningRight or self._turningLeft:	#Now there is no wall in front. So, set "turningRight" to False.				
-				self._turningRight = False;	
-				self._turningLeft = False;		
-			if (currTime - self._lastTurningTime) <= 5.0 and sideDistance >= INFINITY_DIST:
-				sideDistance = Min_side_threshold_dist-1.0;
+#		if frontDistance >= INFINITY_DIST:		# No wall in front
+#			if self._turningRight or self._turningLeft:	#Now there is no wall in front. So, set "turningRight" to False.				
+#				self._turningRight = False;	
+#				self._turningLeft = False;		
+#			if sideDistance > Max_side_threshold_dist:
+#		    		self.moveMotorRight(sideDistance,pts)
+#			elif sideDistance < Min_side_threshold_dist:
+#				self.moveMotorLeft(sideDistance, pts)
+#			else:
+#				self.moveMotorCenter(pts,currTime)
+#		else:
+#			if frontDistance < Min_front_threshold_dist and (currTime - self._lastTurningTime) > 2.0:				
+#				if self._turningRight:
+#					self.moveMotorRight(Max_right_limit,pts);
+#				else:
+#					self.moveMotorLeft(Max_left_limit,pts);	
+#					self._turningLeft = True;
+#				self._lastTurningTime = currTime; #Save turning time		
+#			elif sideDistance > Max_side_threshold_dist:
+#				if sideDistance >= INFINITY_DIST: #If no wall is detected by right side sensor, then take right turn
+#					self._turningRight = True;					
+#		    		self.moveMotorRight(sideDistance, pts)
+#			elif sideDistance < Min_side_threshold_dist:
+#				self.moveMotorLeft(sideDistance, pts)
+#			else:
+#				self.moveMotorCenter(pts,currTime)
+
+		if frontDistance >= Min_front_threshold_dist and not self._turningRight and not self._turningLeft:# No wall in front        
 			if sideDistance > Max_side_threshold_dist:
-		    		self.moveMotorRight(sideDistance,pts)
+				self.moveMotorRight(sideDistance,pts)
 			elif sideDistance < Min_side_threshold_dist:
 				self.moveMotorLeft(sideDistance, pts)
 			else:
 				self.moveMotorCenter(pts,currTime)
+		elif self._turningRight and (currTime - self._lastTurningTime) <= 2.0:
+			self.moveMotorRight(Max_right_limit, pts) #continue with the turn for 2 second and then release the system to IR based mapping
+		elif self._turningRight and (currTime - self._lastTurningTime) < 2.5:
+			self.moveMotorLeft(Max_left_limit, pts) #continue with the turn for 2 second and then release the system to IR based mapping
+		elif self._turningLeft and (currTime - self._lastTurningTime) <= 2.0:
+			self.moveMotorLeft(Max_left_limit, pts)#continue with the turn for 2 second and then release the system to IR based mapping
+		elif self._turningLeft and (currTime - self._lastTurningTime) < 2.5:
+			self.moveMotorRight(Max_right_limit, pts)#continue with the turn for 2 second and then release the system to IR based mapping     
 		else:
-			if frontDistance < Min_front_threshold_dist and (currTime - self._lastTurningTime) > 3.0:				
-				if self._turningRight:
-					self.moveMotorRight(Max_right_limit,pts);
-				else:
-					self.moveMotorLeft(Max_left_limit,pts);	
-					self._turningLeft = True;
-				self._lastTurningTime = currTime; #Save turning time		
-			elif sideDistance > Max_side_threshold_dist:
-				if sideDistance >= INFINITY_DIST and (currTime - self._lastTurningTime) > 3.0: #If no wall is detected by right side sensor, then take right turn
-					self._turningRight = True;	
-					self._lastTurningTime = currTime; #Save turning time				
-		    		self.moveMotorRight(sideDistance, pts)
-			elif sideDistance < Min_side_threshold_dist:
-				self.moveMotorLeft(sideDistance, pts)
+			if frontDistance >= Min_front_threshold_dist:
+				self._turningRight = False;
+				self._turningLeft = False;
 			else:
-				self.moveMotorCenter(pts,currTime)
-			probablyTurning = True;
+				self._lastTurningTime = currTime; #Save turning time        
+				if sideDistance >= INFINITY_DIST:
+					self._turningRight = True;                    
+					self.moveMotorRight(Max_right_limit, pts)
+				else :
+					self._turningLeft = True; 
+					self.moveMotorLeft(Max_left_limit, pts)
+
 			
+	
+		print "======================================================================="
 	    	pts.velocities.append(1.0)
 
 		traj.joint_names.append(names[1]) #DC Motor
-		
-		speed = 0.0;
-		if probablyTurning:
-			speed = 0.44 - self._speedOffset;
-			self._speedOffset += 0.003
+		if self._turningRight or self._turningLeft or frontDistance < Min_front_threshold_dist:
+			pts.positions.append(0.43);
 		else:	
-			speed = MAX_SPEED + ((MIN_SPEED - MAX_SPEED)*self._speedOffset/100.0)
-			self._speedOffset = 0.0
-		
-		speed = MIN_SPEED if speed > MIN_SPEED else speed;
-		speed = MAX_SPEED if speed < MAX_SPEED else speed; 
-		print "DC Motor Speed: ", speed
-		pts.positions.append(speed);
+			pts.positions.append(0.38)
 		pts.velocities.append(1.0)
-		
-		print "======================================================================="
 
 	    	traj.points.append(pts)
 
 	    	client.send_goal(goal)
 
-		client.wait_for_result(rospy.Duration.from_sec(0.001))		
+		client.wait_for_result(rospy.Duration.from_sec(0.005))		
 
    def initiateTrajectoryToAvoidObstacle(self, iRTime):
 	setThresholdValuesForRollingBall(); 
@@ -365,44 +371,37 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	else:
 		pts.positions.append(SERVO_WHEEL_ALIGNMENT_OFFSET)
 		self._centerTime = 0.0
-	if not self._probablyTurning:	
-		self._speedOffset = 0.0;
 	
 
    def moveMotorRight(self, distance, pts):	
-	angle = 0.0;
+	val = "";    	
 	if self._turningRight or self._turningLeft:	#distance >= Max_right_limit:
 		pts.positions.append(-SERVO_MAX_ROTATION)
-		angle = -SERVO_MAX_ROTATION;
+		val = -SERVO_MAX_ROTATION;
     	else:
-		deltaDist = Min_side_threshold_dist-distance;		
-		angle = (deltaDist)*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
+		angle = (Min_side_threshold_dist-distance)*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
 		if angle > -4:
 			angle = -4.0;
     		pts.positions.append(angle if angle >= -SERVO_MAX_ROTATION else -SERVO_MAX_ROTATION)
-		self._lastAngle  = angle;
-		if not self._probablyTurning:	
-			self._speedOffset =  deltaDist*-1
-		
-	print "Move right: ",angle
-	self._lastServoMovement = "right"	
+		self._lastAngle  = angle;		
+		val = str(angle)
+	print "Move right: ",val
+	self._lastServoMovement = "right"
 	
 
    def moveMotorLeft(self, distance, pts):
-	angle = 0.0;
+	val = "";    
     	if self._turningRight or self._turningLeft:	#distance <= Max_left_limit:
 		pts.positions.append(SERVO_MAX_ROTATION)
-		angle = SERVO_MAX_ROTATION
+		val = SERVO_MAX_ROTATION
     	else:
-		deltaDist = Min_side_threshold_dist-distance; 
-		angle = deltaDist*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
+		angle = (Min_side_threshold_dist-distance)*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
 		#if angle < 1:
 		#	angle = 1.0
     		pts.positions.append(angle)
-		self._lastAngle  = angle;
-		if not self._probablyTurning:	
-			self._speedOffset = deltaDist		
-	print "Move left: ",angle
+		self._lastAngle  = angle;		
+		val = str(angle)
+	print "Move left: ",val
 	self._lastServoMovement = "left"
 
 
