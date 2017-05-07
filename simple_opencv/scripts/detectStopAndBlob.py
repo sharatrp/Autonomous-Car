@@ -63,6 +63,8 @@ class Subscriber:
 			(x, y, w, h) = cv2.boundingRect(shape);			
 			newImg = im2[y-10:y+h+10, x-10:x+w+10]		
 			
+			(cx,cy) = (round(x+w/2), round(y+h/2));
+	
 			min_y = min(shape[:,0,1]);
 			min_x = min(shape[:,0,0]);
 
@@ -100,6 +102,8 @@ class Subscriber:
 				print "Circle: ",area, good, sides, ratio
 				imageObj.object = "Rolling Ball"
 				imageObj.area = area;	
+				imageObj.cx = cx;
+				imageObj.cy = cy;
 
 	#cv2.drawContours(im, contours, -1, (0,255,0), 3)
 	

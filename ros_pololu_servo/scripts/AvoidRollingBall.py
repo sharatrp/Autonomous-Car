@@ -44,24 +44,28 @@ VALUES_UPDATED = False;
 
 
 SERVO_MAX_ROTATION = 25.0;
-SERVO_ROTATION_RANGE = 10.0; 
-SERVO_WHEEL_ALIGNMENT_OFFSET = -5.0;	# Servo is always aligned to left. So to bring it to center, move it to -5
+SERVO_ROTATION_RANGE = 20.0; 
+SERVO_WHEEL_ALIGNMENT_OFFSET = -5;	# Servo is always aligned to left. So to bring it to center, move it to -5
 
-LOW_SPEED = 0.41;
-HIGH_SPEED = 0.38;
-
-Max_right_limit = 230
-Max_left_limit = 50
-Max_side_threshold_dist = 160	#Max Right Side distance post which we have to steer right, meaning we are far from the wall and need to move close
-Min_side_threshold_dist = 155	#Min Right Side distance post which we have to steer left, meaning we are close to the wall and need to move away
-INFINITY_DIST = 300
-Min_front_threshold_dist = 250
+Max_right_limit = 230		#Distance after which we have to turn servo extreme right 
+Max_left_limit = 50		#Distance below which we have to turn servo extreme left 
+Max_side_threshold_dist = 170	#Max Right Side distance post which we have to steer right, meaning we are far from the wall and need to move close
+Min_side_threshold_dist = 165	#Min Right Side distance post which we have to steer left, meaning we are close to the wall and need to move away
+INFINITY_DIST = 280
+Min_front_threshold_dist = 200
 Threshold_Time_For_Rolling_Ball = 3 #For 3secs, follow different trajectoryand then come back to center of corridor.
 IR_Motor_scaling = SERVO_ROTATION_RANGE/(Max_side_threshold_dist*1.0) #formula that maps IR range to angle range (25/IR_range)
 
 names=['Servo_Motor', 'DC_Motor']
 
-def setThresholdValuesForRollingBall():
+def setThresholdValuesForRightRollingBall():
+	global Max_right_limit, Max_left_limit, Max_side_threshold_dist, Min_side_threshold_dist
+	Max_right_limit = 300
+	Max_left_limit = 180
+	Max_side_threshold_dist = 260	#Max Right Side distance post which we have to steer right, meaning we are far from the wall
+	Min_side_threshold_dist = 250	#Min Right Side distance post which we have to steer left, meaning we are close to the wall 
+
+def setThresholdValuesForLeftRollingBall(): #In this case, move bot right
 	global Max_right_limit, Max_left_limit, Max_side_threshold_dist, Min_side_threshold_dist
 	Max_right_limit = 300
 	Max_left_limit = 180
@@ -81,39 +85,37 @@ class ImageObjects:
     def __init__(self):        
 	self._detectedObject = "None"
 	self._objectArea = 0.0;
+	self._cx = 0.0;
+	self._cy = 0.0;
 	self._time = 0.0;
 
     def im_callback(self, obj):
 	self._detectedObject = obj.object
 	self._objectArea = obj.area;
+	self._cx = obj.cx;
+	self._cy = obj.cy;
 	self._time = obj.time;
 	#print "Object Detected: ", self._detectedObject," Area: ", self._objectArea, "Time: ",self._time
 
     def getDetectedObject(self):
-	return (self._detectedObject, self._objectArea, self._time)
+	return (self._detectedObject, self._objectArea, self._cx, self._cy, self._time)
 
 class IR_Subscriber:
 
     def __init__(self):
-	self.ir_samples = [[],[]] # 0: Front, 1: Side
+	self.ir_samples = [[],[]] # 0: Left, 1: Right
 	self.ir_filteredvalues = [[100 for i in range(0,MEDIAN_VALUES+1)],[100 for i in range(0,MEDIAN_VALUES+1)]]
 	self.ir_sample_count = 0
 	self.closeDistance = 50; #Distance(in centi mts.) in bad region of IR pulse graph. Meaning we are very close to wall.
 	self.sideWallDistThres = 150; #Distance in centi mts.
-	self._frontDistance = 0.0
-	self._sideDistance = 0.0
+	self._LeftsideDistance = 0.0
+	self._RightsideDistance = 0.0
 	self._IRTime = 0.0
-	self._LastfrontDistance = 301.0
-	self._LastsideDistance = 150.0
+	self._LastLsideDistance = 140.0
+	self._LastRsideDistance = 160.0
 
-    def computeDistance(self, pulse, isFrontIR):
-	index = 0 if isFrontIR else 1; # 0 for front, 1 for side
-
-	if isFrontIR and pulse < 95:	
-		return (self._LastfrontDistance if self._LastfrontDistance < 250.0 else INFINITY_DIST);	# For pulse =98, distance computed is 277.7cm		
-	
-	if not isFrontIR and pulse < 90:	
-		return (self._LastsideDistance if self._LastsideDistance < 150.0 else INFINITY_DIST);	# For pulse =98, distance computed is 277.7cm		
+    def computeDistance(self, pulse, isLeftIR):
+	index = 0 if isLeftIR else 1; # 0 for Left, 1 for Right
 
 	pulse = 90 if pulse < 90 else pulse
 	pulse = 180 if pulse > 180 else pulse
@@ -125,8 +127,10 @@ class IR_Subscriber:
 		return self.closeDistance
 	else: 
 		dist = (0.00000143942*pow(pulse,5) - 0.00092177317 * pow(pulse,4) +  0.23364414584 * pow(pulse,3)  - 29.23709431046 * pow(pulse,2) + 1798.91244546323*pulse  - 43116.42420244727)
-		if not isFrontIR and abs(dist - self._LastsideDistance) <= 5:
-			dist = self._LastsideDistance
+		if not isLeftIR and abs(dist - self._LastRsideDistance) <= 5:
+			dist = self._LastRsideDistance
+		elif not isLeftIR and abs(dist - self._LastLsideDistance) <= 5:
+			dist = self._LastLsideDistance
 		return dist;
 
     def IR_callback(self,irvalue):
@@ -134,18 +138,18 @@ class IR_Subscriber:
 	VALUES_UPDATED = False;
 	frontIRvalueCaptured = 0
 	sideIRvalueCaptured = 0
-	self._frontDistance = self._LastfrontDistance
-	self._sideDistance = self._LastsideDistance
+	self._LeftsideDistance = self._LastLsideDistance
+	self._RightsideDistance = self._LastRsideDistance
 	
 	#print irvalue
 
 	for i in irvalue.motor_states:
-		if i.name == "Side_IR":
+		if i.name == "Side_IR":  #right 
 			self.ir_samples[1].append(i.pulse)
 			#print self.ir_sample_count," side ir : ",i.pulse
 			sideIRvalueCaptured = 1			
-		if i.name == "Front_IR":
-			self.ir_samples[0].append(i.pulse)
+		if i.name == "Front_IR": #left
+			self.ir_samples[0].append(90)#i.pulse)
 			#print self.ir_sample_count," front ir : ",i.pulse				
 			frontIRvalueCaptured = 1
 		if sideIRvalueCaptured and frontIRvalueCaptured:
@@ -167,12 +171,12 @@ class IR_Subscriber:
 		print self.ir_sample_count," side ir : ",self.ir_samples[1][self.ir_sample_count-1], 	"Median: ", self.ir_filteredvalues[1][self.ir_sample_count-1]
 		print self.ir_sample_count," front ir : ",self.ir_samples[0][self.ir_sample_count-1], "Median: ", self.ir_filteredvalues[0][self.ir_sample_count-1]
 
-		self._frontDistance = self.computeDistance(self.ir_filteredvalues[0][self.ir_sample_count-1], True)
-		self._sideDistance = self.computeDistance(self.ir_filteredvalues[1][self.ir_sample_count-1], False)
+		self._LeftsideDistance = self.computeDistance(self.ir_filteredvalues[0][self.ir_sample_count-1], True)
+		self._RighttsideDistance = self.computeDistance(self.ir_filteredvalues[1][self.ir_sample_count-1], False)
 		#print "fd =", self._frontDistance , "sd ",self._sideDistance #, " filtered =" , self.ir_filteredvalues[1][self.ir_sample_count-1]
 
-		self._LastfrontDistance = self._frontDistance
-		self._LastsideDistance = self._sideDistance
+		self._LastLsideDistance = self._LeftsideDistance
+		self._LastRsideDistance = self._RightsideDistance
 
 		self._IRTime = rospy.get_time();
 
@@ -209,7 +213,7 @@ class IR_Subscriber:
 
     def getIRDistances(self):
 	#print (self._frontDist, self._sideDist, self._IRTime)
-	return (self._frontDistance, self._sideDistance, self._IRTime)	
+	return (self._LeftsideDistance, self._RightsideDistance, self._IRTime)	
 
 
 class RobotMovement(ImageObjects, IR_Subscriber):
@@ -223,9 +227,11 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	self._rollingBallTrajectoryActive = False;
 	self._rollingBallTrajectoryStartTime = 0;
 	self._lastTurningTime = 0.0;
-	self._lastAngle = SERVO_WHEEL_ALIGNMENT_OFFSET*-1.0
-	self._centerTime = 0.0
-	self._lastServoMovement = ""
+	self._continuousDetections = 0;
+	self._nOfMiss = 0;
+	self._lastCx = 0;
+	self._lastDeltaCx = [];
+	self._lastBotDirection = "";
 
    def move(self):
 	client = actionlib.SimpleActionClient('pololu_trajectory_action_server', pololu_trajectoryAction)
@@ -234,8 +240,8 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	self._sb = rospy.Subscriber("/pololu/motor_states", MotorStateList, self.IR_callback);	
 
 	while(not rospy.is_shutdown()):		
-		(objectDetected, area, imTime) = ImageObjects.getDetectedObject(self);
-		(frontDistance, sideDistance, iRTime) = IR_Subscriber.getIRDistances(self);
+		(objectDetected, area, cx, cy, imTime) = ImageObjects.getDetectedObject(self);
+		(LeftsideDistance, RightsideDistance, iRTime) = IR_Subscriber.getIRDistances(self);
 		
 		if self._lastIRTime == iRTime: #or self._lastImageTime == imTime:
 			continue;
@@ -244,7 +250,7 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 			self._lastIRTime = iRTime;
 		
 
-		print "frontDistance: ", frontDistance," sideDistance: ",sideDistance," _lastIRTime: ",self._lastIRTime #, objectDetected," ", area, " _lastImageTime:", self._lastImageTime, 		
+		print "LeftsideDistance: ", LeftsideDistance," RightsideDistance: ",RightsideDistance," _lastIRTime: ",self._lastIRTime #, objectDetected," ", area, " _lastImageTime:", self._lastImageTime, 		
 
 		currTime = rospy.get_time()
 		
@@ -254,55 +260,50 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	    	traj.joint_names.append(names[0])
 	    	pts=JointTrajectoryPoint()
 	    	pts.time_from_start=rospy.Duration(0)
+		ballDirection = ""
+		sideDistance = 0.0
 
 		if objectDetected != "None" and not self._rollingBallTrajectoryActive:
 			if objectDetected == "Rolling_ball":
 				print "Detected Rolling Ball."
-				self.initiateTrajectoryToAvoidObstacle(self._lastIRTime);
-			else:
-				print "Stop sign."
-				self.stop(pts);
+				if self._lastCx > 0:
+					self._lastCx.append(cx-self._lastCx);				
+				if(len(self._lastDeltaCx) >= 5):
+					ballDirection = checkListOrder();					
+					self.initiateTrajectoryToAvoidObstacle(self._lastIRTime, ballDirection);
 		elif self._rollingBallTrajectoryActive:
-			if (self._lastIRTime.secs - self._rollingBallTrajectoryStartTime) > 3:
+			if (self._lastIRTime.secs - self._rollingBallTrajectoryStartTime) > Threshold_Time_For_Rolling_Ball:
 				self._rollingBallTrajectoryActive = False;
 				setOriginalThresholdValues();
-			
-
-		if frontDistance >= INFINITY_DIST:		# No wall in front
-			if self._turningRight or self._turningLeft:	#Now there is no wall in front. So, set "turningRight" to False.				
-				self._turningRight = False;	
-				self._turningLeft = False;		
-			if sideDistance > Max_side_threshold_dist:
-		    		self.moveMotorRight(sideDistance,pts)
-			elif sideDistance < Min_side_threshold_dist:
-				self.moveMotorLeft(sideDistance, pts)
-			else:
-				self.moveMotorCenter(pts,currTime)
 		else:
-			if frontDistance < Min_front_threshold_dist and (currTime - self._lastTurningTime) > 2.0:				
-				if self._turningRight:
-					self.moveMotorRight(Max_right_limit,pts);
-				else:
-					self.moveMotorLeft(Max_left_limit,pts);	
-					self._turningLeft = True;
-				self._lastTurningTime = currTime; #Save turning time		
-			elif sideDistance > Max_side_threshold_dist:
-				if sideDistance >= INFINITY_DIST: #If no wall is detected by right side sensor, then take right turn
-					self._turningRight = True;					
-		    		self.moveMotorRight(sideDistance, pts)
-			elif sideDistance < Min_side_threshold_dist:
-				self.moveMotorLeft(sideDistance, pts)
-			else:
-				self.moveMotorCenter(pts,currTime)
-	
+			self._nOfMiss += 1;
+			if self._nOfMiss > 1:
+				self._lastCx = 0.0;
+				del self._lastDeltaCx[:];
+				self._nOfMiss = 0;
+		
+		self._lastCx = cx;
+		
+		if self._rollingBallTrajectoryActive and ballDirection == "right":
+			sideDistance = RightsideDistance
+		elif self._rollingBallTrajectoryActive and ballDirection == "left":
+			sideDistance = LeftsideDistance
+		else:
+			sideDistance = RightsideDistance
+			
+		
+		if sideDistance > Max_side_threshold_dist:
+	    		self.moveMotorRight(sideDistance,pts)
+		elif sideDistance < Min_side_threshold_dist:
+			self.moveMotorLeft(sideDistance, pts)
+		else:
+			self.moveMotorCenter(pts)
+		
 		print "======================================================================="
 	    	pts.velocities.append(1.0)
 
 		traj.joint_names.append(names[1]) #DC Motor
-		if self._turningRight or self._turningLeft:
-			pts.positions.append(0.43);
-		else:	
-			pts.positions.append(0.38)
+		pts.positions.append(0.38)
 		pts.velocities.append(1.0)
 
 	    	traj.points.append(pts)
@@ -311,60 +312,56 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 
 		client.wait_for_result(rospy.Duration.from_sec(0.005))		
 
-   def initiateTrajectoryToAvoidObstacle(self, iRTime):
-	setThresholdValuesForRollingBall(); 
-	self._rollingBallTrajectoryActive = True;
-	self._rollingBallTrajectoryStartTime = iRTime.secs;
+   def initiateTrajectoryToAvoidObstacle(self, iRTime, ballDirection):
+	if ballDirection == "left":
+		setThresholdValuesForRightRollingBall();
+	elif ballDirection == "right":
+		setThresholdValuesForLeftRollingBall();
+	if ballDirection != "junk":
+		self._rollingBallTrajectoryActive = True;
+		self._rollingBallTrajectoryStartTime = iRTime.secs;
+	else:
+		del self._lastDeltaCx[:];
+
+   def checkListOrder(self):
+	pos = 0;
+	neg = 0
+	for i in self._lastDeltaCx:
+		if i >= 0:
+			pos += 1;
+		else:
+			neg += 1;
+	if pos > neg and (pos - neg) >= 7:
+		return "right"
+	elif pos < neg and (neg - pos) >= 7:
+		return "left"
+	else:
+		return "junk"
 
    def stop(self, pts):
 	print "do nothing"
 	pts.positions.append(DC_STOP);
 
-   def moveMotorCenter(self, pts, currTime):
+   def moveMotorCenter(self, pts):
 	print "Keep servo in center position."
-	angle =  (self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET) if (self._lastServoMovement == "left" and self._lastAngle < 0) else self._lastAngle;
-	if self._centerTime == 0.0:
-		self._centerTime = currTime
-		print "self._lastAngle: ",self._lastAngle*-1.0
-		pts.positions.append(self._lastAngle*-1.0);	
-	elif (currTime - self._centerTime)*100 < 100:
-		pts.positions.append(self._lastAngle*-1.0);	
-		print "self._lastAngle: ",self._lastAngle*-1.0
-	else:
-		pts.positions.append(SERVO_WHEEL_ALIGNMENT_OFFSET)
-		self._centerTime = 0.0
-	
+	pts.positions.append(SERVO_WHEEL_ALIGNMENT_OFFSET)
+	self._lastBotDirection = "center"
 
    def moveMotorRight(self, distance, pts):	
 	val = "";    	
-	if self._turningRight or self._turningLeft:	#distance >= Max_right_limit:
-		pts.positions.append(-SERVO_MAX_ROTATION)
-		val = -SERVO_MAX_ROTATION;
-    	else:
-		angle = (Min_side_threshold_dist-distance)*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
-		if angle > -4:
-			angle = -4.0;
-    		pts.positions.append(angle if angle >= -SERVO_MAX_ROTATION else -SERVO_MAX_ROTATION)
-		self._lastAngle  = angle;		
-		val = str(angle)
+	angle = (Min_side_threshold_dist-distance)*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
+	pts.positions.append(angle if angle >= -SERVO_MAX_ROTATION else )
+	val = str(angle)
 	print "Move right: ",val
-	self._lastServoMovement = "right"
-	
+	self._lastBotDirection = "right"
 
    def moveMotorLeft(self, distance, pts):
 	val = "";    
-    	if self._turningRight or self._turningLeft:	#distance <= Max_left_limit:
-		pts.positions.append(SERVO_MAX_ROTATION)
-		val = SERVO_MAX_ROTATION
-    	else:
-		angle = (Min_side_threshold_dist-distance)*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
-		#if angle < 1:
-		#	angle = 1.0
-    		pts.positions.append(angle)
-		self._lastAngle  = angle;		
-		val = str(angle)
+	angle = (Min_side_threshold_dist-distance)*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
+	pts.positions.append(angle)
+	val = str(angle)
 	print "Move left: ",val
-	self._lastServoMovement = "left"
+	self._lastBotDirection = "left"
 
 
 if __name__ == '__main__':
