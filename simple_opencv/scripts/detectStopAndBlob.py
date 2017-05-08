@@ -36,6 +36,8 @@ class Subscriber:
 	self.sd = ShapeDetector();
 	self.orb = cv2.ORB_create()
 	self.pub = None;
+	self.stop_sign_check=0;
+	self.count_misssed = 0;
 	#im = cv2.imread("src/simple_opencv/scripts/stop.jpg");
 	#cv2.imshow('',im);
 	#cv2.waitKey(2);	
@@ -45,8 +47,10 @@ class Subscriber:
 	
 	imageObj = Objects();
 	imageObj.object = ""
-	imageObj.area = 0.0;	
-	
+	imageObj.area = 0.0;
+		
+	stopsign_distance_min  = 2000  # 4 meters
+	stopsign_distance_max =  5000
 	bridge = CvBridge();
 	frame = bridge.imgmsg_to_cv2(image,"bgr8");
 	im = frame;
@@ -60,9 +64,9 @@ class Subscriber:
 	for shape in contours:
 		area = cv2.contourArea(shape)
 		(detectedShape, sides) = self.sd.is_octagon_or_circle(shape);
-		if area > 1500 and detectedShape == 1:
+		if area > stopsign_distance_min and area < stopsign_distance_max and detectedShape == 1:
 			
-			cv2.drawContours(im, [shape], -1, (0,255,0), 3)
+			self.count_misssed = 0
 			(x, y, w, h) = cv2.boundingRect(shape);			
 			newImg = im2[y-10:y+h+10, x-10:x+w+10]		
 			
@@ -92,7 +96,8 @@ class Subscriber:
 			
 			good = len(matches);
 
-			if ratio < 0.60:
+			if ratio < 0.55:
+				cv2.drawContours(im, [shape], -1, (0,255,0), 3)
 				print "====================================================================================="
 				#print area, good, sides, ratio	
 				print"Stop detected"
@@ -101,13 +106,36 @@ class Subscriber:
 				self.cnt +=1;
 				imageObj.object = "Stop_Sign"
 				imageObj.area = area;
+				if(self.stop_sign_check > 1):
+					self.stop_sign_check=self.stop_sign_check - 1
 
 			else:
+				cv2.drawContours(im, [shape], -1, (0,255,0), 3)
 				print "====================================================================================="
 				print "Circle detected"
 				print "area--> ",area,"ratio-->",ratio
+				self.stop_sign_check = self.stop_sign_check + 1
+				print self.stop_sign_check
+				if(self.stop_sign_check == 5):
+					print "====================================================================================="
+					print "====================================================================================="
+					print "====================================================================================="
+					print "True Stop sign Detected"
+					print "====================================================================================="
+					print "====================================================================================="
+					print "====================================================================================="
+					self.stop_sign_check =0 
+
 				imageObj.object = "Rolling Ball"
-				imageObj.area = area;	
+				imageObj.area = area;
+		else:
+			if self.stop_sign_check > 1 :	
+				self.count_misssed = self.count_misssed+1
+				#print self.count_misssed
+				if self.count_misssed == 10000 :
+					self.count_misssed = 0
+					print " here"
+					self.stop_sign_check  = self.stop_sign_check - 1	
 
 	#cv2.drawContours(im, contours, -1, (0,255,0), 3)
 	
