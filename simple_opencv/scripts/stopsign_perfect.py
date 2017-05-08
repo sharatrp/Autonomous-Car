@@ -51,11 +51,8 @@ class Subscriber:
 	frame = bridge.imgmsg_to_cv2(image,"bgr8");
 	im = frame;
 	imgray = cv2.cvtColor(im,cv2.COLOR_BGR2GRAY);
-	#ret,thresh = cv2.threshold(imgray,127,255,0)
-	threshold_rc,thresh = cv2.threshold(imgray,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)  
-
-	im2, contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-	#cv2.drawContours(im, contours, -1, (0,255,0), 3)			
+	ret,thresh = cv2.threshold(imgray,127,255,0)
+	im2, contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)			
 
 	for shape in contours:
 		area = cv2.contourArea(shape)
@@ -66,6 +63,8 @@ class Subscriber:
 			(x, y, w, h) = cv2.boundingRect(shape);			
 			newImg = im2[y-10:y+h+10, x-10:x+w+10]		
 			
+			(cx,cy) = (round(x+w/2), round(y+h/2));
+	
 			min_y = min(shape[:,0,1]);
 			min_x = min(shape[:,0,0]);
 
@@ -91,23 +90,20 @@ class Subscriber:
 			matches = bf.match(des1,self.des2) 			
 			
 			good = len(matches);
-
-			if ratio < 0.60:
-				print "====================================================================================="
-				#print area, good, sides, ratio	
-				print"Stop detected"
-				print "area-->",area,"ratio-->",ratio			
+			
+			if good > 100 and ratio < 0.85:
+				print area, good, sides, ratio				
 				cv2.imwrite("matched_"+str(self.cnt)+"_"+str(good)+".jpg",newImg);
 				self.cnt +=1;
 				imageObj.object = "Stop_Sign"
 				imageObj.area = area;
 
-			else:
-				print "====================================================================================="
-				print "Circle detected"
-				print "area--> ",area,"ratio-->",ratio
+			elif ratio > 0.85:
+				print "Circle: ",area, good, sides, ratio
 				imageObj.object = "Rolling Ball"
 				imageObj.area = area;	
+				imageObj.cx = cx;
+				imageObj.cy = cy;
 
 	#cv2.drawContours(im, contours, -1, (0,255,0), 3)
 	
@@ -130,7 +126,7 @@ class Subscriber:
 
 	self.sb = rospy.Subscriber("camera/image_raw", Image, self.callback);
 	self.pub = rospy.Publisher('detectedObjects', Objects, queue_size=1)
-	rate = rospy.Rate(10) # 10hz
+	rate = rospy.Rate(50) # 10hz
 	  
 	rospy.spin();	
 	print "Terminated Spin in Listener";
