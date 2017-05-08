@@ -123,7 +123,7 @@ class IR_Subscriber:
 	#slope2 = abs((pulse - self.ir_filteredvalues[index][self.ir_sample_count-3])/3);
 	if slope > 8.0 or pulse > 160:
 		#In bad region
-		print "Slope: ",slope#, "Slope2: ",slope2
+		#print "Slope: ",slope#, "Slope2: ",slope2
 		return self.closeDistance
 	else: 
 		dist = (0.00000143942*pow(pulse,5) - 0.00092177317 * pow(pulse,4) +  0.23364414584 * pow(pulse,3)  - 29.23709431046 * pow(pulse,2) + 1798.91244546323*pulse  - 43116.42420244727)
@@ -149,7 +149,7 @@ class IR_Subscriber:
 			#print self.ir_sample_count," side ir : ",i.pulse
 			sideIRvalueCaptured = 1			
 		if i.name == "Front_IR": #left
-			self.ir_samples[0].append(90)#i.pulse)
+			self.ir_samples[0].append(i.pulse)
 			#print self.ir_sample_count," front ir : ",i.pulse				
 			frontIRvalueCaptured = 1
 		if sideIRvalueCaptured and frontIRvalueCaptured:
@@ -232,6 +232,7 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	self._lastCx = 0;
 	self._lastDeltaCx = [];
 	self._lastBotDirection = "";
+	self._ballDirection = ""
 
    def move(self):
 	client = actionlib.SimpleActionClient('pololu_trajectory_action_server', pololu_trajectoryAction)
@@ -243,14 +244,12 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 		(objectDetected, area, cx, cy, imTime) = ImageObjects.getDetectedObject(self);
 		(LeftsideDistance, RightsideDistance, iRTime) = IR_Subscriber.getIRDistances(self);
 		
-		if self._lastIRTime == iRTime: #or self._lastImageTime == imTime:
+		if self._lastIRTime == iRTime or self._lastImageTime == imTime:
 			continue;
 		else:
 			self._lastImageTime = imTime;
 			self._lastIRTime = iRTime;
-		
-
-		print "LeftsideDistance: ", LeftsideDistance," RightsideDistance: ",RightsideDistance," _lastIRTime: ",self._lastIRTime #, objectDetected," ", area, " _lastImageTime:", self._lastImageTime, 		
+						
 
 		currTime = rospy.get_time()
 		
@@ -259,51 +258,62 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 		traj.header.stamp = rospy.Time.now()
 	    	traj.joint_names.append(names[0])
 	    	pts=JointTrajectoryPoint()
-	    	pts.time_from_start=rospy.Duration(0)
-		ballDirection = ""
+	    	pts.time_from_start=rospy.Duration(0)		
 		sideDistance = 0.0
 
 		if objectDetected != "None" and not self._rollingBallTrajectoryActive:
-			if objectDetected == "Rolling_ball":
+			if objectDetected == "Rolling Ball":
 				print "Detected Rolling Ball."
 				if self._lastCx > 0:
-					self._lastCx.append(cx-self._lastCx);				
-				if(len(self._lastDeltaCx) >= 5):
-					ballDirection = checkListOrder();					
-					self.initiateTrajectoryToAvoidObstacle(self._lastIRTime, ballDirection);
+					self._lastDeltaCx.append(cx-self._lastCx);
+				self._lastCx = cx;				
+				if(len(self._lastDeltaCx) >= 10):
+					self._ballDirection = self.checkListOrder();					
+					self.initiateTrajectoryToAvoidObstacle(self._lastIRTime, self._ballDirection);
+					print "Ball Direction: ", self._ballDirection,": ", self._lastDeltaCx
 		elif self._rollingBallTrajectoryActive:
-			if (self._lastIRTime.secs - self._rollingBallTrajectoryStartTime) > Threshold_Time_For_Rolling_Ball:
+			if (self._lastIRTime - self._rollingBallTrajectoryStartTime) > Threshold_Time_For_Rolling_Ball:
 				self._rollingBallTrajectoryActive = False;
 				setOriginalThresholdValues();
 		else:
 			self._nOfMiss += 1;
-			if self._nOfMiss > 1:
+			if self._nOfMiss > 40:
 				self._lastCx = 0.0;
 				del self._lastDeltaCx[:];
-				self._nOfMiss = 0;
+				self._nOfMiss = 0;				
 		
-		self._lastCx = cx;
+		print "LeftsideDistance: ", LeftsideDistance," RightsideDistance: ",RightsideDistance, objectDetected," ","(",cx,",",cy,")", "_rollingBallTrajectoryActive: ",self._rollingBallTrajectoryActive," _lastImageTime:", self._lastImageTime, 
 		
-		if self._rollingBallTrajectoryActive and ballDirection == "right":
-			sideDistance = RightsideDistance
-		elif self._rollingBallTrajectoryActive and ballDirection == "left":
-			sideDistance = LeftsideDistance
-		else:
-			sideDistance = RightsideDistance
-			
-		
-		if sideDistance > Max_side_threshold_dist:
-	    		self.moveMotorRight(sideDistance,pts)
-		elif sideDistance < Min_side_threshold_dist:
-			self.moveMotorLeft(sideDistance, pts)
-		else:
-			self.moveMotorCenter(pts)
+		if self._rollingBallTrajectoryActive:
+			if self._ballDirection == "left":
+				sideDistance = LeftsideDistance
+				if sideDistance > Max_side_threshold_dist:
+			    		self.moveMotorLeft(sideDistance, -1,pts)
+				elif sideDistance < Min_side_threshold_dist:
+					self.moveMotorRight(sideDistance, -1, pts)
+				else:
+					self.moveMotorCenter(pts)
+			else:
+				sideDistance = RightsideDistance
+				if sideDistance > Max_side_threshold_dist:
+			    		self.moveMotorRight(sideDistance, 1, pts)
+				elif sideDistance < Min_side_threshold_dist:
+					self.moveMotorLeft(sideDistance, 1, pts)
+				else:
+					self.moveMotorCenter(pts)				
+		else:		
+			if RightsideDistance > Max_side_threshold_dist:
+		    		self.moveMotorRight(RightsideDistance, 1, pts)
+			elif RightsideDistance < Min_side_threshold_dist:
+				self.moveMotorLeft(RightsideDistance, 1, pts)
+			else:
+				self.moveMotorCenter(pts)
 		
 		print "======================================================================="
 	    	pts.velocities.append(1.0)
 
 		traj.joint_names.append(names[1]) #DC Motor
-		pts.positions.append(0.38)
+		pts.positions.append(0.45)
 		pts.velocities.append(1.0)
 
 	    	traj.points.append(pts)
@@ -317,11 +327,14 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 		setThresholdValuesForRightRollingBall();
 	elif ballDirection == "right":
 		setThresholdValuesForLeftRollingBall();
+	else:
+		setThresholdValuesForRightRollingBall();
 	if ballDirection != "junk":
 		self._rollingBallTrajectoryActive = True;
-		self._rollingBallTrajectoryStartTime = iRTime.secs;
+		self._rollingBallTrajectoryStartTime = iRTime;		
 	else:
 		del self._lastDeltaCx[:];
+		print "Detected Junk Objects"
 
    def checkListOrder(self):
 	pos = 0;
@@ -336,28 +349,28 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	elif pos < neg and (neg - pos) >= 7:
 		return "left"
 	else:
-		return "junk"
-
-   def stop(self, pts):
-	print "do nothing"
-	pts.positions.append(DC_STOP);
+		std = np.std(np.array(self._lastDeltaCx));
+		if std <10:
+			return "right"
+		else:
+			return "junk"
 
    def moveMotorCenter(self, pts):
 	print "Keep servo in center position."
 	pts.positions.append(SERVO_WHEEL_ALIGNMENT_OFFSET)
 	self._lastBotDirection = "center"
 
-   def moveMotorRight(self, distance, pts):	
+   def moveMotorRight(self, distance, IRSwapedCheck, pts):	
 	val = "";    	
-	angle = (Min_side_threshold_dist-distance)*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
-	pts.positions.append(angle if angle >= -SERVO_MAX_ROTATION else )
+	angle = IRSwapedCheck*(Min_side_threshold_dist-distance)*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
+	pts.positions.append(angle if angle >= -SERVO_MAX_ROTATION else -SERVO_MAX_ROTATION)
 	val = str(angle)
 	print "Move right: ",val
 	self._lastBotDirection = "right"
 
-   def moveMotorLeft(self, distance, pts):
+   def moveMotorLeft(self, distance, IRSwapedCheck, pts):
 	val = "";    
-	angle = (Min_side_threshold_dist-distance)*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
+	angle = IRSwapedCheck*(Min_side_threshold_dist-distance)*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
 	pts.positions.append(angle)
 	val = str(angle)
 	print "Move left: ",val

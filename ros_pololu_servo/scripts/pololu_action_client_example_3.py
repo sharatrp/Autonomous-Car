@@ -44,16 +44,16 @@ VALUES_UPDATED = False;
 
 
 SERVO_MAX_ROTATION = 25.0;
-SERVO_ROTATION_RANGE = 10.0; 
+SERVO_ROTATION_RANGE = 15.0; 
 SERVO_WHEEL_ALIGNMENT_OFFSET = -5.0;	# Servo is always aligned to left. So to bring it to center, move it to -5
 
-MIN_SPEED = 0.43;
-MAX_SPEED = 0.38;
+MIN_SPEED = 0.37;
+MAX_SPEED = 0.42;
 
 Max_right_limit = 230
 Max_left_limit = 50
-Max_side_threshold_dist = 160	#Max Right Side distance post which we have to steer right, meaning we are far from the wall and need to move close
-Min_side_threshold_dist = 155	#Min Right Side distance post which we have to steer left, meaning we are close to the wall and need to move away
+Max_side_threshold_dist = 170	#Max Right Side distance post which we have to steer right, meaning we are far from the wall and need to move close
+Min_side_threshold_dist = 150	#Min Right Side distance post which we have to steer left, meaning we are close to the wall and need to move away
 INFINITY_DIST = 300
 Min_front_threshold_dist = 280
 Threshold_Time_For_Rolling_Ball = 3 #For 3secs, follow different trajectoryand then come back to center of corridor.
@@ -87,7 +87,7 @@ class ImageObjects:
 	self._detectedObject = obj.object
 	self._objectArea = obj.area;
 	self._time = obj.time;
-	#print "Object Detected: ", self._detectedObject," Area: ", self._objectArea, "Time: ",self._time
+	print "Object Detected: ", self._detectedObject," Area: ", self._objectArea, "Time: ",self._time
 
     def getDetectedObject(self):
 	return (self._detectedObject, self._objectArea, self._time)
@@ -217,7 +217,7 @@ class IR_Subscriber:
 
     def getIRDistances(self):
 	#print (self._frontDist, self._sideDist, self._IRTime)
-	return (self._frontDistance, self._sideDistance, self._IRTime)	
+	return (self._frontDistance, self._sideDistance, self._lastFrontSlope, self._lastSideSlope, self._IRTime)	
 
 
 class RobotMovement(ImageObjects, IR_Subscriber):
@@ -245,7 +245,7 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 
 	while(not rospy.is_shutdown()):		
 		(objectDetected, area, imTime) = ImageObjects.getDetectedObject(self);
-		(frontDistance, sideDistance, iRTime) = IR_Subscriber.getIRDistances(self);
+		(frontDistance, sideDistance, frontSlope, sideSlope, iRTime) = IR_Subscriber.getIRDistances(self);
 		
 		if self._lastIRTime == iRTime: #or self._lastImageTime == imTime:
 			continue;
@@ -253,11 +253,11 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 			self._lastImageTime = imTime;
 			self._lastIRTime = iRTime;
 		
-
+		deltaDistance = frontDistance, sideDistance
 		print "frontDistance: ", frontDistance," sideDistance: ",sideDistance," _lastIRTime: ",self._lastIRTime #, objectDetected," ", area, " _lastImageTime:", self._lastImageTime, 		
 
 		currTime = rospy.get_time()
-		
+
 		goal = pololu_trajectoryGoal()
 		traj=goal.joint_trajectory
 		traj.header.stamp = rospy.Time.now()
@@ -289,9 +289,9 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 			elif sideDistance < Min_side_threshold_dist:
 				self.moveMotorLeft(sideDistance, pts)
 			else:
-				self.moveMotorCenter(pts,currTime)
+				self.moveMotorCenter(pts, sideSlope, currTime)
 		else:
-			if frontDistance < Min_front_threshold_dist and (currTime - self._lastTurningTime) > 3.0:				
+			if frontDistance < Min_front_threshold_dist: #and (currTime - self._lastTurningTime) > 3.0:				
 				if self._turningRight:
 					self.moveMotorRight(Max_right_limit,pts);
 				else:
@@ -299,14 +299,15 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 					self._turningLeft = True;
 				self._lastTurningTime = currTime; #Save turning time		
 			elif sideDistance > Max_side_threshold_dist:
-				if sideDistance >= INFINITY_DIST and (currTime - self._lastTurningTime) > 3.0: #If no wall is detected by right side sensor, then take right turn
+				if sideDistance >= INFINITY_DIST: #and (currTime - self._lastTurningTime) > 3.0: #If no wall is detected by right side sensor, then take right turn
 					self._turningRight = True;	
 					self._lastTurningTime = currTime; #Save turning time				
 		    		self.moveMotorRight(sideDistance, pts)
 			elif sideDistance < Min_side_threshold_dist:
 				self.moveMotorLeft(sideDistance, pts)
 			else:
-				self.moveMotorCenter(pts,currTime)
+				self.moveMotorCenter(pts, sideSlope, currTime)
+
 			probablyTurning = True;
 			
 	    	pts.velocities.append(1.0)
@@ -315,13 +316,13 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 		
 		speed = 0.0;
 		if probablyTurning:
-			speed = 0.44 - self._speedOffset;
+			speed = 0.43 - self._speedOffset;
 			self._speedOffset += 0.003
 		else:	
 			speed = MAX_SPEED + ((MIN_SPEED - MAX_SPEED)*self._speedOffset/100.0)
 			self._speedOffset = 0.0
 		
-		speed = MIN_SPEED if speed > MIN_SPEED else speed;
+		#speed = MIN_SPEED if speed > MIN_SPEED else speed;
 		speed = MAX_SPEED if speed < MAX_SPEED else speed; 
 		print "DC Motor Speed: ", speed
 		pts.positions.append(speed);
@@ -344,14 +345,14 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	print "do nothing"
 	pts.positions.append(DC_STOP);
 
-   def moveMotorCenter(self, pts, currTime):
+   def moveMotorCenter(self, pts, sideSlope, currTime):
 	print "Keep servo in center position."
 	angle = 0.0;
 	if self._lastServoMovement == "left":
 		if self._lastAngle < 0:	
-			angle =  self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET;
+			angle =  self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET +2;
 		else:
-			angle =  -1*self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET;
+			angle =  -1*self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET+2;
 	else:
 		angle = -1*self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET; #This angle is +ve as bot was moving right. So, decreasing value by offset before giving left move instruction
 
@@ -359,7 +360,7 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 		self._centerTime = currTime
 		print "self._lastAngle: ",angle
 		pts.positions.append(angle*-1.0);	
-	elif (currTime - self._centerTime)*100 < 100:
+	elif (currTime - self._centerTime)*100 < 200:
 		pts.positions.append(angle);	
 		print "self._lastAngle: ",angle
 	else:

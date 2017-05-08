@@ -81,15 +81,15 @@ if __name__ == '__main__':
 	# client.wait_for_result(rospy.Duration.from_sec(5.0))
 
 	i=1;
-	values = -35;
-	h = 0.3;
+	values = -20;
+	h = 1.0;
 	goal = pololu_trajectoryGoal()
 	traj=goal.joint_trajectory
 	traj.header.stamp=rospy.Time.now()
 	traj.joint_names.append(names[0])
 	#traj.joint_names.append(names[1])
 	
-	while values<=35:	    
+	while values<=25:	    
 		# if(k==0): #Move right
 		pts=JointTrajectoryPoint()
 		pts.time_from_start=rospy.Duration(i)
