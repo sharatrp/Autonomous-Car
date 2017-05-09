@@ -44,15 +44,15 @@ VALUES_UPDATED = False;
 
 
 SERVO_MAX_ROTATION = 25.0;
-SERVO_ROTATION_RANGE = 15.0; 
+SERVO_ROTATION_RANGE = 20.0; 
 SERVO_WHEEL_ALIGNMENT_OFFSET = -5.0;	# Servo is always aligned to left. So to bring it to center, move it to -5
 
-MIN_SPEED = 0.44;
-MAX_SPEED = 0.40;
+MIN_SPEED = 0.41;
+MAX_SPEED = 0.38;
 
 Max_right_limit = 230
 Max_left_limit = 50
-Max_side_threshold_dist = 170	#Max Right Side distance post which we have to steer right, meaning we are far from the wall and need to move close
+Max_side_threshold_dist = 200	#Max Right Side distance post which we have to steer right, meaning we are far from the wall and need to move close
 Min_side_threshold_dist = 160	#Min Right Side distance post which we have to steer left, meaning we are close to the wall and need to move away
 INFINITY_DIST = 300
 Min_front_threshold_dist = 280
@@ -277,7 +277,7 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 				self._rollingBallTrajectoryActive = False;
 				setOriginalThresholdValues();
 			
-		probablyTurning = False;
+		self._probablyTurning = False;
 		if frontDistance >= INFINITY_DIST:		# No wall in front
 			if self._turningRight or self._turningLeft:	#Now there is no wall in front. So, set "turningRight" to False.				
 				self._turningRight = False;	
@@ -291,6 +291,7 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 			else:
 				self.moveMotorCenter(pts, sideSlope, currTime)
 		else:
+			self._probablyTurning = True;
 			if frontDistance < Min_front_threshold_dist: #and (currTime - self._lastTurningTime) > 3.0:				
 				if self._turningRight:
 					self.moveMotorRight(Max_right_limit,pts);
@@ -307,22 +308,20 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 				self.moveMotorLeft(sideDistance, pts)
 			else:
 				self.moveMotorCenter(pts, sideSlope, currTime)
-
-			probablyTurning = True;
+			
 			
 	    	pts.velocities.append(1.0)
-
+		print "frontDistance: ", frontDistance," sideDistance: ",sideDistance, " _probablyTurning: ", self._probablyTurning, " speedOffset: ",self._speedOffset, " _lastIRTime: ",self._lastIRTime
 		traj.joint_names.append(names[1]) #DC Motor
 		
 		speed = 0.0;
-		if probablyTurning:
-			speed = 0.43 - self._speedOffset;
+		if self._probablyTurning:
+			speed = 0.46 - self._speedOffset;
 			self._speedOffset += 0.003
 		else:	
 			speed = MAX_SPEED + ((MIN_SPEED - MAX_SPEED)*self._speedOffset/100.0)
 			self._speedOffset = 0.0
 		
-		#speed = MIN_SPEED if speed > MIN_SPEED else speed;
 		speed = MAX_SPEED if speed < MAX_SPEED else speed; 
 		print "DC Motor Speed: ", speed
 		pts.positions.append(speed);
@@ -350,32 +349,35 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	angle = 0.0;
 	if self._lastServoMovement == "left":
 		if self._lastAngle < 0:	
-			angle =   SERVO_WHEEL_ALIGNMENT_OFFSET - self._lastAngle;
+			angle =   SERVO_WHEEL_ALIGNMENT_OFFSET - self._lastAngle - 6;
 		else:
-			angle =  -1*self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET;
+			angle =  -1*self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET - 3;
 	elif self._lastServoMovement == "right":
-		angle = -1*self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET; #This angle is +ve as bot was moving right. So, decreasing value by offset before giving left move instruction
+		angle = -1*self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET + 3; #This angle is +ve as bot was moving right. So, decreasing value by offset before giving left move instruction
 	else:
 		angle = SERVO_WHEEL_ALIGNMENT_OFFSET;
-
-	print "Keep servo in center position: ",angle
+	
 	if self._centerTime == 0.0:
+		self._centerTime = currTime	
+	elif (currTime - self._centerTime)*100 < 50:
+		angle = angle;
+	elif (currTime - self._centerTime)*100 > 50 and (currTime - self._centerTime)*100 < 200:
+		angle = SERVO_WHEEL_ALIGNMENT_OFFSET;
+	elif (currTime - self._centerTime)*100 > 200 and sideSlope > 2.0:
 		self._centerTime = currTime
-		print "self._lastAngle: ",angle
-		pts.positions.append(angle);	
-	elif (currTime - self._centerTime)*100 < 200:
-		pts.positions.append(angle);	
-		print "self._lastAngle: ",angle
-	else:
-		pts.positions.append(angle)
+	else:		
 		self._centerTime = 0.0
 		self._lastServoMovement = ""
+		angle = SERVO_WHEEL_ALIGNMENT_OFFSET;
 	if not self._probablyTurning:	
 		self._speedOffset = 0.0;
+	pts.positions.append(angle);	
+	print "Keep servo in center position: ",angle
 	
 
    def moveMotorRight(self, distance, pts):	
 	angle = 0.0;
+	self._centerTime = 0.0
 	if self._turningRight or self._turningLeft:	#distance >= Max_right_limit:
 		pts.positions.append(-SERVO_MAX_ROTATION)
 		angle = -SERVO_MAX_ROTATION;
@@ -395,6 +397,7 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 
    def moveMotorLeft(self, distance, pts):
 	angle = 0.0;
+	self._centerTime = 0.0
     	if self._turningRight or self._turningLeft:	#distance <= Max_left_limit:
 		pts.positions.append(SERVO_MAX_ROTATION)
 		angle = SERVO_MAX_ROTATION
