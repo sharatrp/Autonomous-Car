@@ -47,8 +47,8 @@ SERVO_MAX_ROTATION = 25.0;
 SERVO_ROTATION_RANGE = 20.0; 
 SERVO_WHEEL_ALIGNMENT_OFFSET = -5.0;	# Servo is always aligned to left. So to bring it to center, move it to -5
 
-MIN_SPEED = 0.39;
-MAX_SPEED = 0.35;
+MIN_SPEED = 0.33;
+MAX_SPEED = 0.29;
 
 Max_right_limit = 230
 Max_left_limit = 50
@@ -112,10 +112,10 @@ class IR_Subscriber:
 	index = 0 if isFrontIR else 1; # 0 for front, 1 for side
 
 	if isFrontIR and pulse < 95:	
-		return (self._LastfrontDistance if self._lastFrontSlope > 8.0 else INFINITY_DIST);	# For pulse =98, distance computed is 277.7cm		
+		return (self._LastfrontDistance if self._lastFrontSlope > 8.0 and self._LastfrontDistance < 150.0 else INFINITY_DIST);	# For pulse =98, distance computed is 277.7cm		
 	
 	if not isFrontIR and pulse < 90:	
-		return (self._LastsideDistance if self._lastSideSlope > 8.0 else INFINITY_DIST);	# For pulse =98, distance computed is 277.7cm		
+		return (self._LastsideDistance if self._lastSideSlope > 8.0 and self._lastSideSlope < 150.0 else INFINITY_DIST);	# For pulse =98, distance computed is 277.7cm		
 
 	pulse = 90 if pulse < 90 else pulse
 	pulse = 180 if pulse > 180 else pulse
@@ -238,6 +238,7 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	self._probablyTurning = False;
 	self._counter = 0;
 	self._turnFlag = False;
+	self._botStartTime = rospy.get_time();
 
    def move(self):
 	client = actionlib.SimpleActionClient('pololu_trajectory_action_server', pololu_trajectoryAction)
@@ -326,6 +327,10 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 			speed = MAX_SPEED + ((MIN_SPEED - MAX_SPEED)*self._speedOffset/1000.0)
 			self._speedOffset = 0.0
 		
+		# Don't Run the DC motors as soon as you start the bot. Wait for inital 2.5 secs before to run DC motors
+		if (currTime - self._botStartTime) < 2.5: # Secs
+			speed = 0.45;
+		
 		speed = MAX_SPEED if speed < MAX_SPEED else speed; 
 		print "DC Motor Speed: ", speed
 		pts.positions.append(speed);
@@ -369,7 +374,7 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 		jerkTaken = "jerkTaken"
 	elif (currTime - self._centerTime)*100 > 50 and (currTime - self._centerTime)*100 < 200:
 		angle = SERVO_WHEEL_ALIGNMENT_OFFSET;
-	elif (currTime - self._centerTime)*100 > 200 and sideSlope > 2.0:
+	elif (currTime - self._centerTime)*100 > 200 and sideSlope > 4.0:
 		self._centerTime = currTime
 	else:		
 		self._centerTime = 0.0

@@ -16,7 +16,7 @@ Servo_Motor:
 
 DC_Motor:
   pololu_id: 12
-  motor_id: 0
+  motor_id: 8
   init: 1500
   min: 1000
   max: 2000
