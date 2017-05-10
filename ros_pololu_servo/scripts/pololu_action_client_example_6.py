@@ -239,6 +239,7 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	self._counter = 0;
 	self._turnFlag = False;
 	self._botStartTime = rospy.get_time();
+	self._stopSignDetected = False;
 
    def move(self):
 	client = actionlib.SimpleActionClient('pololu_trajectory_action_server', pololu_trajectoryAction)
@@ -250,7 +251,7 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 		(objectDetected, area, imTime) = ImageObjects.getDetectedObject(self);
 		(frontDistance, sideDistance, frontSlope, sideSlope, iRTime) = IR_Subscriber.getIRDistances(self);
 		
-		if self._lastIRTime == iRTime: #or self._lastImageTime == imTime:
+		if self._lastIRTime == iRTime or self._lastImageTime == imTime:
 			continue;
 		else:
 			self._lastImageTime = imTime;
@@ -270,7 +271,7 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 		if objectDetected != "None" and not self._rollingBallTrajectoryActive:
 			if objectDetected == "Stop_Sign":
 				print "Detected Stop Sign."				
-				self.stop(pts);
+				self._stopSignDetected = True
 			
 		self._probablyTurning = False;
 		if frontDistance >= INFINITY_DIST:		# No wall in front
@@ -309,16 +310,19 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 				self.moveMotorCenter(pts, sideSlope, currTime)					
 
 	    	pts.velocities.append(1.0)
-		print "frontDistance: ", frontDistance," sideDistance: ",sideDistance, " _probablyTurning: ", self._probablyTurning, " speedOffset: ",self._speedOffset, " _lastIRTime: ",self._lastIRTime
+		print "frontDistance: ", frontDistance," sideDistance: ",sideDistance, " _probablyTurning: ", self._probablyTurning, " speedOffset: ",self._speedOffset, " _lastIRTime: ",self._lastIRTime, ", _stopSignDetected: ",self._stopSignDetected
 		traj.joint_names.append(names[1]) #DC Motor
 		
 		speed = 0.0;
-		if self._probablyTurning:
-			speed = MIN_SPEED + 0.08 - self._speedOffset;
-			self._speedOffset += 0.003
-		else:	
-			speed = MAX_SPEED + ((MIN_SPEED - MAX_SPEED)*self._speedOffset/1000.0)
-			self._speedOffset = 0.0
+		if self._stopSignDetected:
+			speed = DC_STOP;
+		else:
+			if self._probablyTurning:
+				speed = MIN_SPEED + 0.08 - self._speedOffset;
+				self._speedOffset += 0.003
+			else:	
+				speed = MAX_SPEED + ((MIN_SPEED - MAX_SPEED)*self._speedOffset/1000.0)
+				self._speedOffset = 0.0
 		
 		# Don't Run the DC motors as soon as you start the bot. Wait for inital 2.5 secs before to run DC motors
 		if (currTime - self._botStartTime) < 2.5: # Secs
@@ -342,10 +346,6 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	self._rollingBallTrajectoryActive = True;
 	self._rollingBallTrajectoryStartTime = iRTime.secs;
 
-   def stop(self, pts):
-	print "do nothing"
-	
-	pts.positions.append(DC_STOP);
 
    def moveMotorCenter(self, pts, sideSlope, currTime):
 	jerkTaken = "";
