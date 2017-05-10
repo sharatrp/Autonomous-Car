@@ -27,7 +27,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-__author__ = 'vibhor'
+__author__ = 'vikhyat'
 
 import rospy
 import actionlib
@@ -47,13 +47,13 @@ SERVO_MAX_ROTATION = 25.0;
 SERVO_ROTATION_RANGE = 20.0; 
 SERVO_WHEEL_ALIGNMENT_OFFSET = -5.0;	# Servo is always aligned to left. So to bring it to center, move it to -5
 
-MIN_SPEED = 0.40;
-MAX_SPEED = 0.37;
+MIN_SPEED = 0.39;
+MAX_SPEED = 0.35;
 
 Max_right_limit = 230
 Max_left_limit = 50
-Max_side_threshold_dist = 195	#Max Right Side distance post which we have to steer right, meaning we are far from the wall and need to move close
-Min_side_threshold_dist = 165	#Min Right Side distance post which we have to steer left, meaning we are close to the wall and need to move away
+Max_side_threshold_dist = 200	#Max Right Side distance post which we have to steer right, meaning we are far from the wall and need to move close
+Min_side_threshold_dist = 160	#Min Right Side distance post which we have to steer left, meaning we are close to the wall and need to move away
 INFINITY_DIST = 300
 Min_front_threshold_dist = 270
 Threshold_Time_For_Rolling_Ball = 3 #For 3secs, follow different trajectoryand then come back to center of corridor.
@@ -238,7 +238,6 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	self._probablyTurning = False;
 	self._counter = 0;
 	self._turnFlag = False;
-	self._botStartTime = rospy.get_time();
 
    def move(self):
 	client = actionlib.SimpleActionClient('pololu_trajectory_action_server', pololu_trajectoryAction)
@@ -286,10 +285,10 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 				self._turningRight = False;	
 				self._turningLeft = False;
 				self._lastServoMovement = "wall turn"
-			if (currTime - self._lastTurningTime) <= 6.0:
+			if (currTime - self._lastTurningTime) <= 5.0:
 				self._turnFlag = False;
 				
-			if (currTime - self._lastTurningTime) <= 5.0 and sideDistance >= INFINITY_DIST and not self._turnFlag:
+			if (currTime - self._lastTurningTime) <= 7.0 and sideDistance >= INFINITY_DIST and not self._turnFlag:
 				sideDistance = Min_side_threshold_dist-1.0;
 			if sideDistance > Max_side_threshold_dist and not self._turnFlag:
 		    		self.moveMotorRight(sideDistance,pts)
@@ -324,13 +323,9 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 			speed = MIN_SPEED + 0.08 - self._speedOffset;
 			self._speedOffset += 0.003
 		else:	
-			speed = MAX_SPEED + ((MIN_SPEED - MAX_SPEED)*self._speedOffset/100.0)
+			speed = MAX_SPEED + ((MIN_SPEED - MAX_SPEED)*self._speedOffset/1000.0)
 			self._speedOffset = 0.0
 		
-		# Don't Run the DC motors as soon as you start the bot. Wait for inital 2.5 secs before to run DC motors
-		if (currTime - self._botStartTime) < 2.5: # Secs
-			speed = 0.45;
-
 		speed = MAX_SPEED if speed < MAX_SPEED else speed; 
 		print "DC Motor Speed: ", speed
 		pts.positions.append(speed);
@@ -361,9 +356,9 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 		#if self._lastAngle < 0:	
 		#	angle =   SERVO_WHEEL_ALIGNMENT_OFFSET - self._lastAngle - 6;
 		#else:
-			angle =  -1*self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET - 8;
+			angle =  -1*self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET - 6;
 	elif self._lastServoMovement == "right":
-		angle = -1*self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET + 3; #This angle is +ve as bot was moving right. So, decreasing value by offset before giving left move instruction
+		angle = -1*self._lastAngle + SERVO_WHEEL_ALIGNMENT_OFFSET + 4; #This angle is +ve as bot was moving right. So, decreasing value by offset before giving left move instruction
 	else:
 		angle = SERVO_WHEEL_ALIGNMENT_OFFSET;
 	
@@ -393,13 +388,16 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 		pts.positions.append(-SERVO_MAX_ROTATION)
 		angle = -SERVO_MAX_ROTATION;
     	else:
-		deltaDist = (Min_side_threshold_dist + Max_side_threshold_dist)/2.0 -distance;
-		if deltaDist > -20:
-			angle = -7 + SERVO_WHEEL_ALIGNMENT_OFFSET
+		deltaDist = (Min_side_threshold_dist+Max_side_threshold_dist)/2.0 -distance;
+		if deltaDist > -15:
+			angle = -6 ;
 		else:		
-			angle = (deltaDist)*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
+			angle = (deltaDist)*IR_Motor_scaling  ;
+		if angle > -6:
+			angle = -6.0;
+		angle = angle + SERVO_WHEEL_ALIGNMENT_OFFSET;
 		
-		if self._counter >6 and self._counter <= 8:
+		if self._counter > 6 and self._counter <= 8:
 			angle = SERVO_WHEEL_ALIGNMENT_OFFSET;
 		elif self._counter > 8:
 			self._counter = 0;
@@ -422,13 +420,17 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 		pts.positions.append(SERVO_MAX_ROTATION)
 		angle = SERVO_MAX_ROTATION
     	else:
-		deltaDist = (Min_side_threshold_dist + Max_side_threshold_dist)/2.0 - distance; 
-		if deltaDist < 20:
-			angle = 7 + SERVO_WHEEL_ALIGNMENT_OFFSET
+		deltaDist = (Min_side_threshold_dist+Max_side_threshold_dist)/2.0 - distance; 
+		if deltaDist < 15:
+			angle = 4
 		else:
-			angle =  (deltaDist)*IR_Motor_scaling + SERVO_WHEEL_ALIGNMENT_OFFSET;
-		
-		if self._counter >4 and self._counter <= 7:
+			angle =  (deltaDist)*IR_Motor_scaling ;
+		if angle < 5:
+			angle = 5.0;
+
+		angle = angle + SERVO_WHEEL_ALIGNMENT_OFFSET;
+
+		if self._counter > 3 and self._counter <= 7:
 			angle = SERVO_WHEEL_ALIGNMENT_OFFSET;
 		elif self._counter > 7:
 			self._counter = 0;		

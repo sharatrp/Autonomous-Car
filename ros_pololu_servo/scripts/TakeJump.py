@@ -42,6 +42,7 @@ MEDIAN_VALUES = 5;
 
 VALUES_UPDATED = False;
 
+FRAME = (1280.0, 960.0);
 
 SERVO_MAX_ROTATION = 25.0;
 SERVO_ROTATION_RANGE = 20.0; 
@@ -182,12 +183,6 @@ class IR_Subscriber:
 
 		VALUES_UPDATED = True;
 		
-		if self.ir_sample_count == 1000:
-			print "Count: ", len(self.ir_filteredvalues[0]), len(self.ir_samples[0])
-			plt.plot(range(0,self.ir_sample_count+1), self.ir_filteredvalues[0],"r")
-			plt.plot(range(0,self.ir_sample_count), self.ir_samples[0],"y")
-			plt.show()
-		
 	#if self._sideDistance is None:
 	#	print "Median: ", self.ir_filteredvalues[0],"\nSamples: ", self.ir_samples[0]
 	
@@ -262,26 +257,16 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 		sideDistance = 0.0
 
 		if objectDetected != "None" and not self._rollingBallTrajectoryActive:
-			if objectDetected == "Rolling Ball":
-				print "Detected Rolling Ball."
-				if self._lastCx > 0:
-					self._lastDeltaCx.append(cx-self._lastCx);
-				self._lastCx = cx;				
-				if(len(self._lastDeltaCx) >= 10):
-					self._ballDirection = self.checkListOrder();					
-					self.initiateTrajectoryToAvoidObstacle(self._lastIRTime, self._ballDirection);
-					print "Ball Direction: ", self._ballDirection,": ", self._lastDeltaCx
-		elif self._rollingBallTrajectoryActive:
-			if (self._lastIRTime - self._rollingBallTrajectoryStartTime) > Threshold_Time_For_Rolling_Ball:
-				self._rollingBallTrajectoryActive = False;
-				setOriginalThresholdValues();
-		else:
-			self._nOfMiss += 1;
-			if self._nOfMiss > 40:
-				self._lastCx = 0.0;
-				del self._lastDeltaCx[:];
-				self._nOfMiss = 0;				
-		
+			if objectDetected == "Shape":
+				print "Detected Shape"
+				(fx,fy) = (FRAME[0]/2,FRAME[1]/2);
+				slope = (fy-cy)/(fx-cx)*1.0
+				degrees = math.degrees(math.atan(slope))
+				angle = SERVO_ROTATION_RANGE*degrees/90.0
+
+
+
+
 		print "LeftsideDistance: ", LeftsideDistance," RightsideDistance: ",RightsideDistance, objectDetected," ","(",cx,",",cy,")", "_rollingBallTrajectoryActive: ",self._rollingBallTrajectoryActive," _lastImageTime:", self._lastImageTime, 
 		
 		if self._rollingBallTrajectoryActive:
