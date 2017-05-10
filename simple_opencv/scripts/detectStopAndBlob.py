@@ -50,7 +50,7 @@ class Subscriber:
 	imageObj.area = 0.0;
 		
 	stopsign_distance_min  = 2000  # 4 meters
-	stopsign_distance_max =  5000
+	stopsign_distance_max =  10000
 	bridge = CvBridge();
 	frame = bridge.imgmsg_to_cv2(image,"bgr8");
 	im = frame;
@@ -65,7 +65,7 @@ class Subscriber:
 		area = cv2.contourArea(shape)
 		(detectedShape, sides) = self.sd.is_octagon_or_circle(shape);
 		if area > stopsign_distance_min and area < stopsign_distance_max and detectedShape == 1:
-			
+			cv2.drawContours(im, [shape], -1, (0,255,0), 3)
 			self.count_misssed = 0
 			(x, y, w, h) = cv2.boundingRect(shape);			
 			newImg = im2[y-10:y+h+10, x-10:x+w+10]		
@@ -86,37 +86,35 @@ class Subscriber:
 			except Exception as e:
 				print "error", e.args, e;
 
-			kp1, des1 = self.orb.detectAndCompute(newImg,None)			
+			#kp1, des1 = self.orb.detectAndCompute(newImg,None)			
 
 			# create BFMatcher object
-			bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True) 
+			#bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True) 
 			
 			# Match descriptors.
-			matches = bf.match(des1,self.des2) 			
+			#matches = bf.match(des1,self.des2) 			
 			
-			good = len(matches);
+			#good = len(matches);
 
 			if ratio < 0.55:
-				cv2.drawContours(im, [shape], -1, (0,255,0), 3)
-				print "====================================================================================="
+				#cv2.drawContours(im, [shape], -1, (0,255,0), 3)
+				#print "====================================================================================="
 				#print area, good, sides, ratio	
-				print"Stop detected"
-				print "area-->",area,"ratio-->",ratio			
-				cv2.imwrite("matched_"+str(self.cnt)+"_"+str(good)+".jpg",newImg);
-				self.cnt +=1;
-				imageObj.object = "Stop_Sign"
-				imageObj.area = area;
+				#print"Stop detected"
+				#print "area-->",area,"ratio-->",ratio			
+				#cv2.imwrite("matched_"+str(self.cnt)+"_"+str(good)+".jpg",newImg);
+				self.cnt +=1;				
 				if(self.stop_sign_check > 1):
 					self.stop_sign_check=self.stop_sign_check - 1
 
 			else:
 				cv2.drawContours(im, [shape], -1, (0,255,0), 3)
-				print "====================================================================================="
-				print "Circle detected"
+				#print "====================================================================================="
+				#print "Circle detected"
 				print "area--> ",area,"ratio-->",ratio
 				self.stop_sign_check = self.stop_sign_check + 1
-				print self.stop_sign_check
-				if(self.stop_sign_check == 5):
+				#print self.stop_sign_check
+				if(self.stop_sign_check == 2):
 					print "====================================================================================="
 					print "====================================================================================="
 					print "====================================================================================="
@@ -126,8 +124,8 @@ class Subscriber:
 					print "====================================================================================="
 					self.stop_sign_check =0 
 
-				imageObj.object = "Rolling Ball"
-				imageObj.area = area;
+					imageObj.object = "Stop_Sign"
+					imageObj.area = area;
 		else:
 			if self.stop_sign_check > 1 :	
 				self.count_misssed = self.count_misssed+1
@@ -145,8 +143,8 @@ class Subscriber:
 	imageObj.time = rospy.get_time();
 	self.pub.publish(imageObj);
 
-	cv2.imshow('Image Window',im);
-	cv2.waitKey(2);	
+	#cv2.imshow('Image Window',im);
+	#cv2.waitKey(2);	
 	#self.cnt +=1;
 	#if len(self.cnt) > 4:
 	#    self.sb.unregister();

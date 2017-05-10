@@ -45,10 +45,10 @@ VALUES_UPDATED = False;
 
 SERVO_MAX_ROTATION = 25.0;
 SERVO_ROTATION_RANGE = 20.0; 
-SERVO_WHEEL_ALIGNMENT_OFFSET = 3.5;	# Servo is always aligned to left. So to bring it to center, move it to -5
+SERVO_WHEEL_ALIGNMENT_OFFSET = -5;	# Servo is always aligned to left. So to bring it to center, move it to -5
 
-MIN_SPEED = 0.38;
-MAX_SPEED = 0.25;
+MIN_SPEED = 0.42;
+MAX_SPEED = 0.40;
 
 Max_right_limit = 230
 Max_left_limit = 50
@@ -256,7 +256,7 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 		else:
 			self._lastImageTime = imTime;
 			self._lastIRTime = iRTime;
-		
+		print "Got latest timestamp from Image and Pololu"
 		deltaDistance = frontDistance, sideDistance
 
 		currTime = rospy.get_time()
@@ -268,10 +268,9 @@ class RobotMovement(ImageObjects, IR_Subscriber):
 	    	pts=JointTrajectoryPoint()
 	    	pts.time_from_start=rospy.Duration(0)
 
-		if objectDetected != "None" and not self._rollingBallTrajectoryActive:
-			if objectDetected == "Stop_Sign":
-				print "Detected Stop Sign."				
-				self._stopSignDetected = True
+		if objectDetected == "Stop_Sign":
+			print "Detected Stop Sign."				
+			self._stopSignDetected = True
 			
 		self._probablyTurning = False;
 		if frontDistance >= INFINITY_DIST:		# No wall in front
